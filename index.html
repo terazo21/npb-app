@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NPB ペナントレース予想分析</title>
+<title>安部家 プロ野球ペナントレース予想管理システム</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -174,8 +174,8 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
 
 <div class="header">
   <div>
-    <div class="header-title">⚾ NPB <span>予想</span>分析</div>
-    <div class="header-sub">ペナントレース予想成績管理</div>
+    <div class="header-title">🏠 安部家 <span>プロ野球</span>ペナントレース予想管理システム</div>
+    <div class="header-sub">家族みんなの予想成績を自動集計</div>
   </div>
   <div id="dbBadge" class="db-badge db-loading">⏳ DB接続中</div>
 </div>
@@ -268,38 +268,15 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
 
     <!-- 順位表 -->
     <div id="tab-standings" class="tab-content">
-      <!-- 現在の順位入力 -->
+      <!-- 現在の順位（DBから自動取得） -->
       <div class="live-box">
-        <h3>📋 現在の順位を入力（Claudeに聞いてここに入力）</h3>
+        <h3>📡 今シーズン現在の順位（毎朝自動更新）</h3>
+        <div id="liveUpdatedAt" style="font-size:11px;color:#888;margin-bottom:10px;">読込中...</div>
         <div class="league-toggle">
           <button class="lg-btn cl on" id="inputCL" onclick="switchInputLeague('cl')">セ・リーグ</button>
           <button class="lg-btn pl" id="inputPL" onclick="switchInputLeague('pl')">パ・リーグ</button>
         </div>
-        <div id="inputFormCL" class="input-grid">
-          <span class="input-rank top">1位</span><select class="team-sel" id="cl_1"></select>
-          <span class="input-rank top">2位</span><select class="team-sel" id="cl_2"></select>
-          <span class="input-rank top">3位</span><select class="team-sel" id="cl_3"></select>
-          <span class="input-rank">4位</span><select class="team-sel" id="cl_4"></select>
-          <span class="input-rank">5位</span><select class="team-sel" id="cl_5"></select>
-          <span class="input-rank">6位</span><select class="team-sel" id="cl_6"></select>
-        </div>
-        <div id="inputFormPL" style="display:none;" class="input-grid">
-          <span class="input-rank top-pa">1位</span><select class="team-sel" id="pl_1"></select>
-          <span class="input-rank top-pa">2位</span><select class="team-sel" id="pl_2"></select>
-          <span class="input-rank top-pa">3位</span><select class="team-sel" id="pl_3"></select>
-          <span class="input-rank">4位</span><select class="team-sel" id="pl_4"></select>
-          <span class="input-rank">5位</span><select class="team-sel" id="pl_5"></select>
-          <span class="input-rank">6位</span><select class="team-sel" id="pl_6"></select>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
-          <select id="inputPhase" style="padding:6px 10px;border-radius:6px;border:1px solid #c0cfe8;font-size:12px;">
-            <option value="final">最終結果として保存</option>
-            <option value="half">前半戦結果として保存</option>
-          </select>
-          <button class="apply-btn" onclick="applyLiveStandings()">✅ 反映・保存</button>
-          <span id="liveUpdatedAt" style="font-size:11px;color:#27ae60;"></span>
-        </div>
-        <div id="liveError" style="display:none;margin-top:6px;font-size:12px;color:#c62828;"></div>
+        <div id="liveStandingsTable"></div>
       </div>
 
       <!-- 過去の比較 -->
@@ -946,40 +923,50 @@ function selectMember(name, el) {
 // 順位入力フォーム
 // =============================================
 function initInputSelects() {
-  ['cl','pl'].forEach(lg=>{
-    const teams=lg==='cl'?CL_TEAMS:PL_TEAMS;
-    [1,2,3,4,5,6].forEach(r=>{
-      const sel=document.getElementById(lg+'_'+r); if(!sel) return;
-      sel.innerHTML='<option value="">-- 選択 --</option>'+teams.map(t=>`<option value="${t}">${t}</option>`).join('');
-    });
-  });
+  // フォームは削除済み、ライブ順位表を表示
+  renderLiveStandingsTable(currentInputLeague);
+  // 更新日時を表示
+  const year = new Date().getFullYear();
+  const data = allData[year];
+  const el = document.getElementById('liveUpdatedAt');
+  if (el) {
+    el.textContent = data
+      ? '✅ DBから取得済（毎朝8時に自動更新）'
+      : '今シーズンのデータ未取得';
+  }
 }
 
 function switchInputLeague(lg) {
   currentInputLeague=lg;
   document.getElementById('inputCL').className='lg-btn cl'+(lg==='cl'?' on':'');
   document.getElementById('inputPL').className='lg-btn pl'+(lg==='pl'?' on':'');
-  document.getElementById('inputFormCL').style.display=lg==='cl'?'grid':'none';
-  document.getElementById('inputFormPL').style.display=lg==='pl'?'grid':'none';
+  renderLiveStandingsTable(lg);
 }
 
-async function applyLiveStandings() {
-  const errEl=document.getElementById('liveError');
-  const phase=document.getElementById('inputPhase').value;
-  const buildResult=lg=>{const r={};for(let i=1;i<=6;i++){const v=document.getElementById(lg+'_'+i)?.value;if(v)r[v]=i;}return r;};
-  const cl=buildResult('cl'); const pa=buildResult('pl');
-  if(!Object.keys(cl).length&&!Object.keys(pa).length){errEl.textContent='⚠️ 順位を入力してください';errEl.style.display='block';return;}
-  errEl.style.display='none';
-  const year=new Date().getFullYear();
-  if(!allData[year]) initYear(year);
-  if(phase==='final'){if(Object.keys(cl).length)allData[year].result_cl=cl;if(Object.keys(pa).length)allData[year].result_pa=pa;}
-  else{if(Object.keys(cl).length)allData[year].half_cl=cl;if(Object.keys(pa).length)allData[year].half_pa=pa;allData[year].hasHalf=true;}
-  showLoading('DBに保存中...');
-  await saveResultToDB(year, phase, cl, pa);
-  hideLoading();
-  document.getElementById('liveUpdatedAt').textContent='✅ '+new Date().toLocaleDateString('ja-JP')+'時点で保存しました';
-  renderAll();
+function renderLiveStandingsTable(lg) {
+  const year = new Date().getFullYear();
+  const data = allData[year];
+  const el = document.getElementById('liveStandingsTable');
+  if (!el) return;
+  if (!data) {
+    el.innerHTML = '<div style="text-align:center;padding:16px;color:#999;font-size:12px;">今シーズンの順位データがありません<br>GitHub Actionsが毎朝自動取得します</div>';
+    return;
+  }
+  const result = lg==='cl' ? data.result_cl : data.result_pa;
+  const rankToTeam = {};
+  Object.entries(result).forEach(([t,r]) => rankToTeam[r]=t);
+  const medals = ['🥇','🥈','🥉','４','５','６'];
+  const rows = [1,2,3,4,5,6].map((rank,i) => {
+    const team = rankToTeam[rank] || '-';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;${rank<=3?'background:rgba(59,125,216,0.06)':''}">
+      <span style="font-size:18px;width:28px;text-align:center">${medals[i]}</span>
+      <span style="font-weight:${rank<=3?'700':'500'};font-size:14px">${team}</span>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div style="display:flex;flex-direction:column;gap:3px;">${rows}</div>`;
 }
+
+// applyLiveStandings は削除（GitHub Actionsで自動取得）
 
 // 順位表比較タブ
 function renderStandingsPills() {
