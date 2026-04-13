@@ -219,6 +219,10 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
         <div id="leaderboard" class="leaderboard"></div>
       </div>
       <div class="card">
+        <div class="card-title"><span class="dot" style="background:#e74c3c"></span>💰 通算獲得賞金ランキング</div>
+        <div id="prizeLeaderboard" class="leaderboard"></div>
+      </div>
+      <div class="card">
         <div class="card-title"><span class="dot" style="background:#3b7dd8"></span>年度別的中数推移</div>
         <div class="chart-wrap"><canvas id="trendChart" role="img" aria-label="年度別的中数推移"></canvas></div>
       </div>
@@ -342,6 +346,20 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
           <div style="margin-top:6px;color:#27ae60;font-weight:600;">✅ アップロード済みのデータはSupabaseに保存されるので、次回以降は自動で読み込まれます</div>
         </div>
       </div>
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:#f5c518"></span>💰 賞金ルール一覧</div>
+        <div style="font-size:12px;color:#666;margin-bottom:10px;">前半戦はセ・パ各リーグ独立で判定。最終はセ・パ合計12チームで判定。</div>
+        <table class="pred-table" id="prizeRuleTable">
+          <thead><tr>
+            <th>年度</th>
+            <th>前半3的中</th><th>前半4的中</th><th>前半6的中</th>
+            <th>最終8以上</th><th>最終12全部</th>
+          </tr></thead>
+          <tbody id="prizeRuleTbody"></tbody>
+        </table>
+        <div style="margin-top:8px;font-size:11px;color:#888;">※ 2027年以降はExcelアップロード時に自動読み取り</div>
+      </div>
+      </div>
     </div>
   </div>
 </div>
@@ -412,6 +430,76 @@ let teamChartInst = null;
 
 const AVATAR_COLORS = ['#e74c3c','#3498db','#27ae60','#9b59b6','#f39c12','#1abc9c','#e67e22','#2980b9','#8e44ad','#c0392b','#16a085','#d35400'];
 const CL_TEAMS = ['巨人','阪神','DeNA','広島','中日','ヤクルト'];
+
+// 年別賞金ルール
+const PRIZE_RULES = {
+  // year: { half_3, half_4, half_6, final_8, final_12 }
+  // half_X = セ or パ リーグ で X チーム的中した時の賞金（各リーグ独立）
+  default: { half_3:0, half_4:0, half_6:0, final_8:10000, final_12:10000 },
+  2020: { half_3:0, half_4:0, half_6:0, final_8:10000, final_12:10000 },
+  2021: { half_3:0, half_4:0, half_6:5000, final_8:10000, final_12:10000 },
+  2022: { half_3:3000, half_4:4000, half_6:5000, final_8:10000, final_12:10000 },
+  2023: { half_3:3000, half_4:4000, half_6:5000, final_8:10000, final_12:10000 },
+  2024: { half_3:3000, half_4:4000, half_6:5000, final_8:10000, final_12:10000 },
+  2025: { half_3:3000, half_4:4000, half_6:5000, final_8:10000, final_12:10000 },
+  2026: { half_3:4000, half_4:5000, half_6:6000, final_8:10000, final_12:10000 },
+};
+
+function getPrizeRule(year) {
+  return PRIZE_RULES[year] || PRIZE_RULES.default;
+}
+
+// 賞金計算
+function calcPrize(name, year) {
+  const data = allData[year];
+  if (!data) return { half_cl:0, half_pa:0, final:0, total:0, detail:[] };
+  const m = data.members[name];
+  if (!m) return { half_cl:0, half_pa:0, final:0, total:0, detail:[] };
+  const rule = getPrizeRule(parseInt(year));
+  const detail = [];
+  let half_cl = 0, half_pa = 0, finalPrize = 0;
+
+  // 前半戦（セ・パ各リーグ独立）
+  if (data.hasHalf) {
+    const calcHalf = (pred, result, lg) => {
+      let hits = pred.filter((t,i) => result[t] === i+1).length;
+      let prize = 0;
+      if (hits >= 6 && rule.half_6) { prize = rule.half_6; detail.push(`前半${lg}途中ピタリ賞 +¥${rule.half_6.toLocaleString()}`); }
+      else if (hits >= 4 && rule.half_4) { prize = rule.half_4; detail.push(`前半${lg}ニアピタ賞(${hits}チーム) +¥${rule.half_4.toLocaleString()}`); }
+      else if (hits >= 3 && rule.half_3) { prize = rule.half_3; detail.push(`前半${lg}ハフピタ賞(${hits}チーム) +¥${rule.half_3.toLocaleString()}`); }
+      return prize;
+    };
+    half_cl = calcHalf(m.pred_cl||[], data.half_cl||{}, 'セ');
+    half_pa = calcHalf(m.pred_pa||[], data.half_pa||{}, 'パ');
+  }
+
+  // 最終（セパ合計12チームで判定）
+  let totalHits = 0;
+  (m.pred_cl||[]).forEach((t,i) => { if ((data.result_cl||{})[t]===i+1) totalHits++; });
+  (m.pred_pa||[]).forEach((t,i) => { if ((data.result_pa||{})[t]===i+1) totalHits++; });
+  if (totalHits >= 12 && rule.final_12) {
+    finalPrize = rule.final_12;
+    detail.push(`ピタリ賞(12チーム全的中) +¥${rule.final_12.toLocaleString()}`);
+  } else if (totalHits >= 8 && rule.final_8) {
+    finalPrize = rule.final_8;
+    detail.push(`ほぼ的中賞(${totalHits}チーム) +¥${rule.final_8.toLocaleString()}`);
+  }
+
+  const total = half_cl + half_pa + finalPrize;
+  return { half_cl, half_pa, final:finalPrize, total, detail, totalHits };
+}
+
+function calcTotalPrize(name) {
+  let totalPrize = 0, winCount = 0;
+  const yearBreakdown = {};
+  Object.keys(allData).forEach(year => {
+    const p = calcPrize(name, year);
+    yearBreakdown[year] = p;
+    totalPrize += p.total;
+    if (p.total > 0) winCount++;
+  });
+  return { totalPrize, winCount, yearBreakdown };
+}
 const PL_TEAMS = ['ソフトバンク','ロッテ','楽天','日本ハム','西武','オリックス'];
 
 function showLoading(text = '処理中...') {
@@ -599,6 +687,26 @@ async function parseSheet(rows, year, isHalf=false) {
     });
   }
 
+  // 賞金ルールをExcelから読み取り（2026年〜）
+  if (parseInt(year) >= 2027) {
+    const newRule = { half_3:0, half_4:0, half_6:0, final_8:10000, final_12:10000 };
+    rows.forEach(row => {
+      if (!row) return;
+      const texts = row.filter(v=>v!==null).map(v=>String(v));
+      const joined = texts.join(' ');
+      const amountIdx = row.findIndex(v => typeof v === 'number' && v >= 1000 && v <= 50000);
+      if (amountIdx < 0) return;
+      const amount = row[amountIdx];
+      if (joined.includes('ハフピタ') || joined.includes('3チーム')) newRule.half_3 = amount;
+      else if (joined.includes('ニアピタ') || joined.includes('4チーム')) newRule.half_4 = amount;
+      else if (joined.includes('途中ピタリ') || joined.includes('6チーム')) newRule.half_6 = amount;
+      else if (joined.includes('ほぼ的中') || joined.includes('8チーム')) newRule.final_8 = amount;
+      else if (joined.includes('ピタリ賞') || joined.includes('12チーム')) newRule.final_12 = amount;
+    });
+    PRIZE_RULES[parseInt(year)] = newRule;
+    console.log(`${year}年賞金ルール読み取り:`, newRule);
+  }
+
   // allDataに反映
   Object.entries(members).forEach(([name,m]) => {
     if (!allData[year].members[name]) allData[year].members[name]={pred_cl:[],pred_pa:[]};
@@ -685,7 +793,7 @@ function renderAll() {
   if(!currentYearDetail) currentYearDetail=years[years.length-1];
   if(!currentStYear) currentStYear=years[years.length-1];
   document.getElementById('mainContent').style.display='block';
-  renderOverview(); renderYearPills(); renderYearDetail(); renderMemberCards(); renderStandingsPills(); renderStandings(); initInputSelects();
+  renderOverview(); renderYearPills(); renderYearDetail(); renderMemberCards(); renderStandingsPills(); renderStandings(); initInputSelects(); renderPrizeRules();
 }
 
 function renderOverview() {
@@ -707,6 +815,24 @@ function renderOverview() {
       <div style="text-align:right;"><div class="lb-score">${m.hitRate}%</div><div class="lb-detail">的中${m.totalHit}/${m.totalTeams} ｜ ±1以内${m.nearRate}%</div></div>
     </div>`).join('');
   const sortedYears=years.sort();
+  // 賞金ランキング
+  const prizeRanking = getAllMembers().map((name,i) => {
+    const tp = calcTotalPrize(name);
+    return { name, ...tp, color: AVATAR_COLORS[i%AVATAR_COLORS.length] };
+  }).sort((a,b) => b.totalPrize - a.totalPrize);
+  const maxPrize = prizeRanking[0]?.totalPrize || 1;
+  document.getElementById('prizeLeaderboard').innerHTML = prizeRanking.map((m,i) => `
+    <div class="lb-row">
+      <div class="lb-rank ${i<3?'rank-'+(i+1):''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+      <div class="lb-avatar" style="background:${m.color}22;color:${m.color}">${m.name[0]}</div>
+      <div class="lb-name">${m.name}</div>
+      <div class="lb-bar-wrap"><div class="lb-bar" style="width:${m.totalPrize/maxPrize*100}%;background:linear-gradient(90deg,#f5c518,#c8920a)"></div></div>
+      <div style="text-align:right;">
+        <div class="lb-score" style="color:#c8920a">¥${m.totalPrize.toLocaleString()}</div>
+        <div class="lb-detail">獲得${m.winCount}回</div>
+      </div>
+    </div>`).join('');
+
   if(trendChartInst) trendChartInst.destroy();
   trendChartInst=new Chart(document.getElementById('trendChart'),{
     type:'line',
@@ -766,7 +892,16 @@ function renderYearDetail() {
     return `<tr><td style="font-weight:700;color:#1a3a6b">${rank}位</td><td style="font-weight:700">${at}</td>${cells}</tr>`;
   }).join('');
   const hitRow=`<tr style="background:#f8faff"><td colspan="2" style="font-weight:700;text-align:right;">的中数▶</td>${members.map(([,m])=>{const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];let h=0;pred.forEach((t,i)=>{if(result[t]===i+1)h++;});return`<td style="font-weight:700;color:#1a3a6b">${h}/6</td>`;}).join('')}</tr>`;
-  document.getElementById('yearTable').innerHTML=`<table class="pred-table"><thead>${thead}</thead><tbody>${tbody}${hitRow}</tbody></table><div style="margin-top:6px;font-size:11px;color:#666;"><span class="hit" style="margin-right:6px;">ピタリ</span><span class="near" style="margin-right:6px;">±1以内</span><span class="miss">外れ</span></div>`;
+  // 賞金行を追加
+  const prizeRow = `<tr style="background:#fff8e1"><td colspan="2" style="font-weight:700;text-align:right;">💰 獲得賞金▶</td>${
+    members.map(([name]) => {
+      const p = calcPrize(name, year);
+      const prize = isH ? (lg==='cl' ? p.half_cl : p.half_pa) : p.final;
+      return `<td style="font-weight:700;color:${prize>0?'#c8920a':'#999'}">${prize>0?'¥'+prize.toLocaleString():'-'}</td>`;
+    }).join('')
+  }</tr>`;
+
+  document.getElementById('yearTable').innerHTML=`<table class="pred-table"><thead>${thead}</thead><tbody>${tbody}${hitRow}${prizeRow}</tbody></table><div style="margin-top:6px;font-size:11px;color:#666;"><span class="hit" style="margin-right:6px;">ピタリ</span><span class="near" style="margin-right:6px;">±1以内</span><span class="miss">外れ</span></div>`;
 }
 
 function renderMemberCards() {
@@ -784,6 +919,7 @@ function selectMember(name, el) {
   document.querySelectorAll('.member-card').forEach(c=>c.classList.remove('selected'));
   el.classList.add('selected');
   const s=calcMemberStats(name);
+  const tp=calcTotalPrize(name);
   const ranking=calcAllRanking();
   const rank=ranking.findIndex(m=>m.name===name)+1;
   const m=ranking[rank-1];
@@ -889,6 +1025,21 @@ function renderStandings() {
       return `<td style="font-size:11px;">${cls}${pr?pr+'位予想':'?'}</td>`;
     }).join('');
     return `<tr class="${rank<=3?'cs':''}""><td style="text-align:center">${medals[i]}</td><td><strong>${team}</strong></td>${cells}</tr>`;
+  }).join('');
+}
+
+function renderPrizeRules() {
+  const tbody = document.getElementById('prizeRuleTbody');
+  if (!tbody) return;
+  const years = Object.keys(allData).sort();
+  tbody.innerHTML = years.map(y => {
+    const r = getPrizeRule(parseInt(y));
+    const fmt = v => v > 0 ? '¥'+v.toLocaleString() : '-';
+    return `<tr>
+      <td style="font-weight:700">${y}年</td>
+      <td>${fmt(r.half_3)}</td><td>${fmt(r.half_4)}</td><td>${fmt(r.half_6)}</td>
+      <td>${fmt(r.final_8)}</td><td>${fmt(r.final_12)}</td>
+    </tr>`;
   }).join('');
 }
 
