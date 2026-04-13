@@ -1,1 +1,28 @@
+name: NPB順位自動更新
 
+on:
+  schedule:
+    # 毎日朝8時（日本時間）に実行 = UTC 23時
+    - cron: '0 23 * * *'
+  workflow_dispatch:  # 手動実行も可能
+
+jobs:
+  update-standings:
+    runs-on: ubuntu-latest
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ライブラリインストール
+        run: pip install requests beautifulsoup4
+
+      - name: 順位取得・Supabase保存
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python update_standings.py
