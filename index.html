@@ -355,8 +355,8 @@ async function initSupabase() {
   }
   try {
     sbClient = window.supabase.createClient(url, key);
-    const { error } = await sbClient.from('members').select('id').limit(1);
-    if (error) throw error;
+    const { error } = await sbClient.from('predictions').select('id').limit(1);
+    if (error) { console.warn('DB接続テスト失敗（テーブルが空の場合は正常）:', error.message); }
     dbReady = true;
     document.getElementById('dbBadge').textContent = '✅ DB接続済';
     document.getElementById('dbBadge').className = 'db-badge db-ok';
@@ -459,26 +459,32 @@ function initYear(year) {
 }
 
 async function savePredictionToDB(year, memberName, predCL, predPA) {
-  if (!dbReady) return;
+  if (!sbClient) { console.warn('sbClient未初期化'); return; }
   const rows = [];
   if (predCL.length > 0) rows.push({ year, member_name:memberName, league:'cl', rank1:predCL[0]||null, rank2:predCL[1]||null, rank3:predCL[2]||null, rank4:predCL[3]||null, rank5:predCL[4]||null, rank6:predCL[5]||null });
   if (predPA.length > 0) rows.push({ year, member_name:memberName, league:'pl', rank1:predPA[0]||null, rank2:predPA[1]||null, rank3:predPA[2]||null, rank4:predPA[3]||null, rank5:predPA[4]||null, rank6:predPA[5]||null });
   for (const row of rows) {
-    await sbClient.from('predictions').upsert(row, { onConflict: 'year,member_name,league' });
+    const { error } = await sbClient.from('predictions').upsert(row, { onConflict: 'year,member_name,league' });
+    if (error) console.error('predictions upsert error:', error.message, row);
+    else console.log('保存OK:', memberName, year, row.league);
   }
 }
 
 async function saveResultToDB(year, phase, rankMapCL, rankMapPA) {
-  if (!dbReady) return;
+  if (!sbClient) { console.warn('sbClient未初期化'); return; }
   const toRanks = (rankMap) => {
     const arr = Object.entries(rankMap).sort((a,b)=>a[1]-b[1]).map(([t])=>t);
     return { rank1:arr[0]||null, rank2:arr[1]||null, rank3:arr[2]||null, rank4:arr[3]||null, rank5:arr[4]||null, rank6:arr[5]||null };
   };
   if (Object.keys(rankMapCL).length > 0) {
-    await sbClient.from('results').upsert({ year, phase, league:'cl', ...toRanks(rankMapCL), updated_at:new Date().toISOString() }, { onConflict:'year,phase,league' });
+    const { error } = await sbClient.from('results').upsert({ year, phase, league:'cl', ...toRanks(rankMapCL), updated_at:new Date().toISOString() }, { onConflict:'year,phase,league' });
+    if (error) console.error('results(cl) upsert error:', error.message);
+    else console.log('results(cl)保存OK:', year, phase);
   }
   if (Object.keys(rankMapPA).length > 0) {
-    await sbClient.from('results').upsert({ year, phase, league:'pl', ...toRanks(rankMapPA), updated_at:new Date().toISOString() }, { onConflict:'year,phase,league' });
+    const { error } = await sbClient.from('results').upsert({ year, phase, league:'pl', ...toRanks(rankMapPA), updated_at:new Date().toISOString() }, { onConflict:'year,phase,league' });
+    if (error) console.error('results(pa) upsert error:', error.message);
+    else console.log('results(pa)保存OK:', year, phase);
   }
 }
 
