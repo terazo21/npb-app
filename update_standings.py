@@ -8,8 +8,17 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-SUPABASE_URL = os.environ['SUPABASE_URL']
-SUPABASE_KEY = os.environ['SUPABASE_KEY']
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').rstrip('/')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("❌ 環境変数 SUPABASE_URL または SUPABASE_KEY が設定されていません")
+    print(f"  SUPABASE_URL: {'設定済' if SUPABASE_URL else '未設定'}")
+    print(f"  SUPABASE_KEY: {'設定済' if SUPABASE_KEY else '未設定'}")
+    exit(1)
+
+print(f"接続先: {SUPABASE_URL}")
+
 HEADERS_SB = {
     'apikey': SUPABASE_KEY,
     'Authorization': f'Bearer {SUPABASE_KEY}',
@@ -41,7 +50,6 @@ def normalize_team(name):
     return name
 
 def scrape_standings():
-    """スポーツナビから順位表を取得"""
     url = 'https://baseball.yahoo.co.jp/npb/standings/'
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
@@ -64,11 +72,10 @@ def scrape_standings():
             if len(cells) < 3:
                 continue
             texts = [c.get_text(strip=True) for c in cells]
-            # 順位が数字の行を取得
             try:
                 rank = int(texts[0])
                 team = normalize_team(texts[1])
-                if team and rank >= 1 and rank <= 6:
+                if team and 1 <= rank <= 6:
                     teams.append({'rank': rank, 'team': team})
             except (ValueError, IndexError):
                 continue
@@ -80,7 +87,6 @@ def scrape_standings():
     return result
 
 def save_to_supabase(year, phase, league, teams):
-    """Supabaseに順位を保存"""
     if not teams:
         print(f"  データなし: {league}")
         return
@@ -98,11 +104,8 @@ def save_to_supabase(year, phase, league, teams):
         'updated_at': datetime.utcnow().isoformat()
     }
 
-    res = requests.post(
-        f'{SUPABASE_URL}/rest/v1/results',
-        headers={**HEADERS_SB, 'Prefer': 'resolution=merge-duplicates'},
-        json=data
-    )
+    endpoint = f'{SUPABASE_URL}/rest/v1/results'
+    res = requests.post(endpoint, headers=HEADERS_SB, json=data)
 
     if res.status_code in (200, 201):
         print(f"  ✅ 保存OK: {year}年 {phase} {league} → {[t['team'] for t in teams]}")
@@ -121,9 +124,8 @@ def main():
 
         if not standings['cl'] and not standings['pl']:
             print("⚠️ 順位データを取得できませんでした")
-            return
+            exit(1)
 
-        # Supabaseに保存
         print("Supabaseに保存中...")
         save_to_supabase(year, 'final', 'cl', standings['cl'])
         save_to_supabase(year, 'final', 'pl', standings['pl'])
