@@ -2,9 +2,8 @@ name: NPB順位自動更新
 
 on:
   schedule:
-    # 毎日朝8時（日本時間）に実行 = UTC 23時
     - cron: '0 23 * * *'
-  workflow_dispatch:  # 手動実行も可能
+  workflow_dispatch:
 
 jobs:
   update-standings:
