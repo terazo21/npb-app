@@ -199,16 +199,7 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
     </div>
   </div>
 
-  <!-- アップロード -->
-  <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()"
-       ondragover="evDrag(event,'drag')" ondragleave="evDrag(event,'')" ondrop="dropFile(event)">
-    <div class="upload-icon">📂</div>
-    <div class="upload-title">Excelファイルをアップロード</div>
-    <div class="upload-sub">毎年の予想ファイル（.xlsm/.xlsx）を複数選択可。DBに自動保存されます。</div>
-    <button class="upload-btn" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">ファイルを選択</button>
-    <div id="uploadStatus" class="upload-status"></div>
-  </div>
-  <input type="file" id="fileInput" accept=".xlsx,.xlsm" multiple onchange="loadFiles(this.files)">
+  <input type="file" id="fileInput" accept=".xlsx,.xlsm" multiple onchange="loadFiles(this.files)" style="display:none;">
 
   <!-- メインコンテンツ -->
   <div id="mainContent" style="display:none;">
@@ -217,6 +208,7 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
       <button class="tab-btn" onclick="switchTab('yearDetail')">📅 年度別</button>
       <button class="tab-btn" onclick="switchTab('member')">👤 メンバー別</button>
       <button class="tab-btn" onclick="switchTab('standings')">🏆 順位表</button>
+      <button class="tab-btn" onclick="switchTab('upload')">📂 データ取込</button>
     </div>
 
     <!-- 総合成績 -->
@@ -327,6 +319,28 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
           </table>
         </div>
         <div style="margin-top:6px;font-size:11px;color:#888;">🟢 ピタリ的中　🟡 ±1位以内　🔴 外れ</div>
+      </div>
+    </div>
+
+    <!-- データ取込タブ -->
+    <div id="tab-upload" class="tab-content">
+      <div class="card">
+        <div class="card-title"><span class="dot" style="background:#3b7dd8"></span>Excelファイルを取込</div>
+        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()"
+             ondragover="evDrag(event,'drag')" ondragleave="evDrag(event,'')" ondrop="dropFile(event)">
+          <div class="upload-icon">📂</div>
+          <div class="upload-title">Excelファイルをアップロード</div>
+          <div class="upload-sub">毎年の予想ファイル（.xlsm/.xlsx）を複数選択可。DBに自動保存されます。<br>前半戦ファイルはファイル名に「前半」を含めてください。</div>
+          <button class="upload-btn" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">ファイルを選択</button>
+          <div id="uploadStatus" class="upload-status"></div>
+        </div>
+        <div style="margin-top:14px;font-size:12px;color:#666;background:#f8faff;border-radius:8px;padding:12px;">
+          <div style="font-weight:700;margin-bottom:6px;">📌 アップロードのルール</div>
+          <div>・最終結果ファイル：ファイル名に年度（例：2023年）が入っていれば自動認識</div>
+          <div>・前半戦ファイル：ファイル名に「前半」を含める（例：2023年前半戦.xlsm）</div>
+          <div>・複数年分を同時にアップロードできます</div>
+          <div style="margin-top:6px;color:#27ae60;font-weight:600;">✅ アップロード済みのデータはSupabaseに保存されるので、次回以降は自動で読み込まれます</div>
+        </div>
       </div>
     </div>
   </div>
@@ -879,7 +893,7 @@ function renderStandings() {
 }
 
 function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',['overview','yearDetail','member','standings'][i]===name));
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',['overview','yearDetail','member','standings','upload'][i]===name));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
 }
