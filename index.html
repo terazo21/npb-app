@@ -95,7 +95,7 @@ body { font-family: 'Hiragino Kaku Gothic ProN','Noto Sans JP','Meiryo',sans-ser
 table.pred-table { width:100%; border-collapse:collapse; font-size:12px; }
 .pred-table th { background:#1a3a6b; color:#fff; padding:7px 8px; text-align:center; font-weight:600; white-space:nowrap; }
 .pred-table th:first-child { text-align:left; }
-.pred-table td { padding:6px 8px; text-align:center; border-bottom:1px solid #f0f2f5; }
+.pred-table td { padding:6px 8px; text-align:center; border-bottom:1px solid #f0f2f5; white-space:nowrap; }
 .pred-table tr:hover td { background:#f8faff; }
 .pred-table .team-col { text-align:left; font-weight:600; }
 .hit { background:#e8f5e9; color:#2e7d32; font-weight:700; border-radius:4px; padding:1px 5px; }
@@ -241,7 +241,7 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
           <button class="phase-btn half" id="ydHalf" onclick="switchYearPhase('half')">前半戦</button>
         </div>
       </div>
-      <div class="card" style="overflow-x:auto;">
+      <div class="card" style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
         <div class="card-title"><span class="dot" style="background:#c62828"></span><span id="yearDetailTitle">年度別予想結果</span></div>
         <div id="yearTable"></div>
       </div>
@@ -492,10 +492,12 @@ async function loadFromDB() {
   if (!dbReady) return;
   showLoading('DBからデータを読み込み中...');
   try {
+    const currentYear = new Date().getFullYear();
     const [{ data: preds }, { data: results }] = await Promise.all([
       sbClient.from('predictions').select('*').order('year'),
       sbClient.from('results').select('*').order('year')
     ]);
+    console.log(`取得: 予想${(preds||[]).length}件, 結果${(results||[]).length}件`);
 
     allData = {};
 
@@ -930,9 +932,11 @@ function initInputSelects() {
   const data = allData[year];
   const el = document.getElementById('liveUpdatedAt');
   if (el) {
-    el.textContent = data
-      ? '✅ DBから取得済（毎朝8時に自動更新）'
-      : '今シーズンのデータ未取得';
+    if (data && (Object.keys(data.result_cl||{}).length > 0 || Object.keys(data.result_pa||{}).length > 0)) {
+      el.textContent = '✅ DBから取得済（毎朝8時に自動更新）';
+    } else {
+      el.innerHTML = '⚠️ 今シーズン(' + year + '年)のデータ未取得 — GitHub Actionsが毎朝8時に自動更新します';
+    }
   }
 }
 
@@ -1034,6 +1038,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',['overview','yearDetail','member','standings','upload'][i]===name));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
+  if (name === 'standings') initInputSelects();
 }
 
 // =============================================
