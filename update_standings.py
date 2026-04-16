@@ -3,7 +3,6 @@ NPB順位表を自動取得してSupabaseに保存するスクリプト
 GitHub Actionsから毎日自動実行される
 """
 import os
-import json
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -13,8 +12,6 @@ SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     print("❌ 環境変数 SUPABASE_URL または SUPABASE_KEY が設定されていません")
-    print(f"  SUPABASE_URL: {'設定済' if SUPABASE_URL else '未設定'}")
-    print(f"  SUPABASE_KEY: {'設定済' if SUPABASE_KEY else '未設定'}")
     exit(1)
 
 print(f"接続先: {SUPABASE_URL}")
@@ -23,10 +20,8 @@ HEADERS_SB = {
     'apikey': SUPABASE_KEY,
     'Authorization': f'Bearer {SUPABASE_KEY}',
     'Content-Type': 'application/json',
-    'Prefer': 'resolution=merge-duplicates'
 }
 
-# チーム名の正規化マップ
 TEAM_MAP = {
     '読売': '巨人', '巨人': '巨人', 'ジャイアンツ': '巨人',
     '阪神': '阪神', 'タイガース': '阪神',
@@ -51,16 +46,13 @@ def normalize_team(name):
 
 def scrape_standings():
     url = 'https://baseball.yahoo.co.jp/npb/standings/'
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'}
     res = requests.get(url, headers=headers, timeout=15)
     res.encoding = 'utf-8'
     soup = BeautifulSoup(res.text, 'html.parser')
 
     result = {'cl': [], 'pl': []}
     tables = soup.find_all('table')
-
     league_idx = 0
     league_keys = ['cl', 'pl']
 
@@ -105,12 +97,31 @@ def save_to_supabase(year, phase, league, teams):
     }
 
     endpoint = f'{SUPABASE_URL}/rest/v1/results'
-    res = requests.post(endpoint, headers=HEADERS_SB, json=data)
 
-    if res.status_code in (200, 201):
-        print(f"  ✅ 保存OK: {year}年 {phase} {league} → {[t['team'] for t in teams]}")
+    # まず既存レコードを確認
+    check = requests.get(
+        f"{endpoint}?year=eq.{year}&phase=eq.{phase}&league=eq.{league}",
+        headers=HEADERS_SB
+    )
+    existing = check.json()
+
+    if existing:
+        # 既存あり → PATCH で更新
+        res = requests.patch(
+            f"{endpoint}?year=eq.{year}&phase=eq.{phase}&league=eq.{league}",
+            headers=HEADERS_SB,
+            json=data
+        )
+        action = "更新(PATCH)"
     else:
-        print(f"  ❌ 保存失敗: {res.status_code} {res.text}")
+        # 新規 → POST で挿入
+        res = requests.post(endpoint, headers={**HEADERS_SB, 'Prefer': 'return=minimal'}, json=data)
+        action = "新規(POST)"
+
+    if res.status_code in (200, 201, 204):
+        print(f"  ✅ {action}OK: {year}年 {phase} {league} → {[t['team'] for t in teams]}")
+    else:
+        print(f"  ❌ {action}失敗: {res.status_code} {res.text}")
 
 def main():
     year = datetime.now().year
