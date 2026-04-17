@@ -67,16 +67,16 @@ body { font-family: 'Hiragino Kaku Gothic ProN','Noto Sans JP','Meiryo',sans-ser
 
 /* ===== LEADERBOARD ===== */
 .leaderboard { display:flex; flex-direction:column; gap:7px; }
-.lb-row { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px; border:1px solid #e8edf5; }
+.lb-row { display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:8px; border:1px solid #e8edf5; min-width:0; }
 .lb-row:hover { background:#f8faff; }
 .lb-rank { font-size:16px; font-weight:800; width:28px; text-align:center; flex-shrink:0; }
 .rank-1 { color:#c8920a; } .rank-2 { color:#888; } .rank-3 { color:#a0613a; }
 .lb-avatar { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0; }
-.lb-name { font-weight:600; font-size:13px; flex:1; }
-.lb-bar-wrap { width:60px; height:5px; background:#e8edf5; border-radius:3px; flex-shrink:0; }
+.lb-name { font-weight:600; font-size:13px; flex:1; min-width:0; white-space:nowrap; }
+.lb-bar-wrap { width:50px; min-width:30px; height:5px; background:#e8edf5; border-radius:3px; flex-shrink:1; }
 .lb-bar { height:100%; border-radius:3px; background:linear-gradient(90deg,#3b7dd8,#1a3a6b); }
-.lb-score { font-size:16px; font-weight:700; color:#1a3a6b; }
-.lb-detail { font-size:10px; color:#666; }
+.lb-score { font-size:15px; font-weight:700; color:#1a3a6b; white-space:nowrap; }
+.lb-detail { font-size:10px; color:#666; white-space:nowrap; }
 
 /* ===== YEAR PILLS ===== */
 .year-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
