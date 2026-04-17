@@ -2,7 +2,7 @@ name: NPB順位自動更新
 
 on:
   schedule:
-    - cron: '30 22 * * *'
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 jobs:
