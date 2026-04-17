@@ -67,16 +67,13 @@ body { font-family: 'Hiragino Kaku Gothic ProN','Noto Sans JP','Meiryo',sans-ser
 
 /* ===== LEADERBOARD ===== */
 .leaderboard { display:flex; flex-direction:column; gap:7px; }
-.lb-row { padding:10px 12px; border-radius:8px; border:1px solid #e8edf5; }
+.lb-row { display:flex; align-items:center; gap:8px; padding:10px 12px; border-radius:8px; border:1px solid #e8edf5; }
 .lb-row:hover { background:#f8faff; }
-.lb-row-top { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
 .lb-rank { font-size:16px; font-weight:800; width:28px; text-align:center; flex-shrink:0; }
 .rank-1 { color:#c8920a; } .rank-2 { color:#888; } .rank-3 { color:#a0613a; }
 .lb-avatar { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0; }
 .lb-name { font-weight:600; font-size:13px; flex:1; }
 .lb-score { font-size:15px; font-weight:700; color:#1a3a6b; white-space:nowrap; flex-shrink:0; }
-.lb-bar-wrap { width:100%; height:5px; background:#e8edf5; border-radius:3px; margin-bottom:4px; overflow:hidden; }
-.lb-bar { height:100%; border-radius:3px; background:linear-gradient(90deg,#3b7dd8,#1a3a6b); }
 .lb-detail { font-size:10px; color:#666; }
 
 /* ===== YEAR PILLS ===== */
@@ -790,14 +787,10 @@ function renderOverview() {
   const maxH=ranking[0]?.totalHit||1;
   document.getElementById('leaderboard').innerHTML=ranking.map((m,i)=>`
     <div class="lb-row">
-      <div class="lb-row-top">
-        <div class="lb-rank ${i<3?'rank-'+(i+1):''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
-        <div class="lb-avatar" style="background:${m.color}22;color:${m.color}">${m.name[0]}</div>
-        <div class="lb-name">${m.name}</div>
-        <div class="lb-score">${m.hitRate}%</div>
-      </div>
-      <div class="lb-bar-wrap"><div class="lb-bar" style="width:${m.totalHit/maxH*100}%"></div></div>
-      <div class="lb-detail">的中${m.totalHit}/${m.totalTeams} ｜ ±1以内${m.nearRate}%</div>
+      <div class="lb-rank ${i<3?'rank-'+(i+1):''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+      <div class="lb-avatar" style="background:${m.color}22;color:${m.color}">${m.name[0]}</div>
+      <div class="lb-name">${m.name}<div class="lb-detail">的中${m.totalHit}/${m.totalTeams} ｜ ±1以内${m.nearRate}%</div></div>
+      <div class="lb-score">${m.hitRate}%</div>
     </div>`).join('');
   const sortedYears=years.sort();
   // 賞金ランキング
@@ -809,14 +802,10 @@ function renderOverview() {
   document.getElementById('prizeLeaderboard').innerHTML = prizeRanking.map((m,i) => `
     <div class="lb-row">
       <div class="lb-rank ${i<3?'rank-'+(i+1):''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
-      <div class="lb-row-top">
-        <div class="lb-rank ${i<3?'rank-'+(i+1):''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
-        <div class="lb-avatar" style="background:${m.color}22;color:${m.color}">${m.name[0]}</div>
-        <div class="lb-name">${m.name}</div>
-        <div class="lb-score" style="color:#c8920a">¥${m.totalPrize.toLocaleString()}</div>
-      </div>
-      <div class="lb-bar-wrap"><div class="lb-bar" style="width:${m.totalPrize/maxPrize*100}%;background:linear-gradient(90deg,#f5c518,#c8920a)"></div></div>
-      <div class="lb-detail">獲得${m.winCount}回</div>
+      <div class="lb-rank ${i<3?'rank-'+(i+1):''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+      <div class="lb-avatar" style="background:${m.color}22;color:${m.color}">${m.name[0]}</div>
+      <div class="lb-name">${m.name}<div class="lb-detail">獲得${m.winCount}回</div></div>
+      <div class="lb-score" style="color:#c8920a">¥${m.totalPrize.toLocaleString()}</div>
     </div>`).join('');
 
   if(trendChartInst) trendChartInst.destroy();
