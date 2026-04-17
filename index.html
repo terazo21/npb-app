@@ -345,6 +345,8 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
 // 設定（index.htmlを編集してここを書き換えてください）
 // =============================================
 const SUPABASE_URL = 'https://fkqnasfjghwkauypogji.supabase.co';
+// Cloudflare Worker URL（デプロイ後に書き換えてください）
+const WORKER_URL = 'https://npb-proxy.tks-absp21.workers.dev/';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZrcW5hc2ZqZ2h3a2F1eXBvZ2ppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjE3NDcsImV4cCI6MjA5MDczNzc0N30.JAPUActmfOM3L62simTf-puABS2KrDMiIp8AaIRqt94';
 
 // =============================================
@@ -1044,6 +1046,48 @@ function switchTab(name) {
 // =============================================
 // 起動
 // =============================================
+// ===== 起動時に順位を自動取得してSupabaseに保存 =====
+async function fetchAndSaveStandings() {
+  if (!WORKER_URL || WORKER_URL === 'https://npb-proxy.tks-absp21.workers.dev/') return;
+  try {
+    console.log('最新順位を取得中...');
+    const res = await fetch(WORKER_URL);
+    if (!res.ok) throw new Error('Worker response: ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const year = new Date().getFullYear();
+    if (!allData[year]) initYear(year);
+
+    // 取得した順位をallDataに反映
+    const toRankMap = (teams) => {
+      const m = {};
+      teams.forEach(t => { m[t.team] = t.rank; });
+      return m;
+    };
+    if (data.cl && data.cl.length > 0) allData[year].result_cl = toRankMap(data.cl);
+    if (data.pl && data.pl.length > 0) allData[year].result_pa = toRankMap(data.pl);
+
+    // Supabaseにも保存
+    await saveResultToDB(year, 'final',
+      allData[year].result_cl,
+      allData[year].result_pa
+    );
+
+    console.log('順位更新完了:', data.updated);
+
+    // 表示を更新
+    const el = document.getElementById('liveUpdatedAt');
+    if (el) el.textContent = '✅ ' + data.updated + ' 時点（起動時自動取得）';
+    renderLiveStandingsTable(currentInputLeague);
+    renderStandingsPills();
+    renderStandings();
+
+  } catch(e) {
+    console.warn('順位自動取得失敗:', e.message);
+  }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   // 保存済み設定をフォームに表示
   const savedUrl=localStorage.getItem('sb_url');
@@ -1052,7 +1096,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   if(savedKey) document.getElementById('sbKey').value=savedKey;
 
   const ok=await initSupabase();
-  if(ok) await loadFromDB();
+  if(ok) {
+    await loadFromDB();
+    // DBロード後に最新順位を自動取得
+    await fetchAndSaveStandings();
+  }
   initInputSelects();
 });
 </script>
