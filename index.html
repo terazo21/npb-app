@@ -385,8 +385,8 @@ function saveConfig() {
   if (!url || !key) { alert('URLとKeyを入力してください'); return; }
   localStorage.setItem('sb_url', url);
   localStorage.setItem('sb_key', key);
-  initSupabase().then(ok => {
-    if (ok) { loadFromDB(); }
+  initSupabase().then(async ok => {
+    if (ok) { await loadFromDB(); await fetchAndSaveStandings(); }
   });
 }
 
@@ -1042,7 +1042,7 @@ function switchTab(name) {
 // =============================================
 // ===== 起動時に順位を自動取得してSupabaseに保存 =====
 async function fetchAndSaveStandings() {
-  if (!WORKER_URL || WORKER_URL === 'https://npb-proxy.tks-absp21.workers.dev/') return;
+  if (!WORKER_URL || WORKER_URL === 'YOUR_WORKER_URL') return;
   try {
     console.log('最新順位を取得中...');
     const res = await fetch(WORKER_URL);
