@@ -561,6 +561,8 @@ async function loadFromDB() {
       if (row.phase === 'final') {
         if (row.league === 'cl') allData[row.year].result_cl = rankMap;
         else allData[row.year].result_pa = rankMap;
+        // DBにfinalレコードが存在する＝確定済みの最終結果
+        allData[row.year].finalConfirmed = true;
       } else {
         if (row.league === 'cl') allData[row.year].half_cl = rankMap;
         else allData[row.year].half_pa = rankMap;
@@ -577,7 +579,7 @@ async function loadFromDB() {
 }
 
 function initYear(year) {
-  if (!allData[year]) allData[year] = { members:{}, result_cl:{}, result_pa:{}, half_cl:{}, half_pa:{}, hasHalf:false };
+  if (!allData[year]) allData[year] = { members:{}, result_cl:{}, result_pa:{}, half_cl:{}, half_pa:{}, hasHalf:false, finalConfirmed:false };
 }
 
 async function savePredictionToDB(year, memberName, predCL, predPA) {
@@ -892,7 +894,10 @@ function renderYearDetail() {
   const lg=currentYearLeague;
   const isH=currentYearPhase==='half'&&data.hasHalf;
   const result=isH?(lg==='cl'?data.half_cl:data.half_pa):(lg==='cl'?data.result_cl:data.result_pa);
-  const phLabel=isH?'【前半戦】':'【最終結果】';
+  // 現在シーズン中で、まだ最終結果として確定されていない場合は「シーズン中」と表示
+  const currentYearNow = new Date().getFullYear();
+  const isOngoingUnconfirmedFinal = !isH && parseInt(year) === currentYearNow && !data.finalConfirmed;
+  const phLabel = isH ? '【前半戦】' : (isOngoingUnconfirmedFinal ? '📊【シーズン中】' : '【最終結果】');
   document.getElementById('yearDetailTitle').textContent=`${year}年 ${lg==='cl'?'セ':'パ'}・リーグ ${phLabel}`;
   const members=Object.entries(data.members);
   if(!members.length){document.getElementById('yearTable').innerHTML='<div style="text-align:center;padding:20px;color:#999;">データなし</div>';return;}
@@ -1022,8 +1027,10 @@ async function confirmCurrentStandings() {
       data.half_cl = { ...(data.result_cl||{}) };
       data.half_pa = { ...(data.result_pa||{}) };
       data.hasHalf = true;
+    } else {
+      // 最終結果として確定
+      data.finalConfirmed = true;
     }
-    // 最終結果として確定する場合、result_cl/result_paは既に現在値なのでそのままでOK
   } finally {
     hideLoading();
   }
