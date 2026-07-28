@@ -1091,7 +1091,7 @@ function switchTab(name) {
 // =============================================
 // ===== 起動時に順位を自動取得してSupabaseに保存 =====
 async function fetchAndSaveStandings() {
-  if (!WORKER_URL || WORKER_URL === 'https://npb-proxy.tks-absp21.workers.dev/') return;
+  if (!WORKER_URL) return;
   try {
     console.log('最新順位を取得中...');
     const res = await fetch(WORKER_URL);
