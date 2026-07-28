@@ -411,27 +411,21 @@ const CL_TEAMS = ['巨人','阪神','DeNA','広島','中日','ヤクルト'];
 // 同率対応: predの各予想が的中しているか判定するヘルパー
 // pred: 予想チーム配列(0-indexed), result: {チーム名:実際の順位}
 // 戻り値: 的中数
-// resultの各チームが「占有する順位」の一覧を返す（同率なら複数順位を占有）
-// 例: {阪神:1,巨人:1,ヤクルト:3} → {阪神:[1,2], 巨人:[1,2], ヤクルト:[3]}
-function occupiedRanks(result) {
-  const rg = {};
-  Object.entries(result).forEach(([t,r]) => { if(!rg[r]) rg[r]=[]; rg[r].push(t); });
-  const occ = {};
-  Object.entries(rg).forEach(([r, teams]) => {
-    const start = parseInt(r);
-    const range = teams.map((_, k) => start + k);
-    teams.forEach(t => occ[t] = range);
-  });
-  return occ;
+// resultを順位昇順に並べた配列を返す（同率は元のオブジェクト順を維持）
+function sortedByRank(result) {
+  return Object.entries(result).sort((a,b) => a[1]-b[1]);
 }
-// pred(予想配列, 0-indexed)のうち、同率を考慮して的中している数を返す
+// pred(予想配列, 0-indexed)のi番目の予想が、実際の順位を昇順に並べたi番目の「順位の値」と
+// 一致していれば的中とする。同率チームは同じ順位の値を持つため、
+// 同率グループの1番目・2番目どちらの枠を予想してもヒットになる。
 function countHits(pred, result) {
-  const occ = occupiedRanks(result);
+  const sorted = sortedByRank(result);
   let h = 0;
   pred.forEach((team, i) => {
-    const predRank = i + 1;
-    const range = occ[team] || [];
-    if (range.includes(predRank)) h++;
+    if (i >= sorted.length) return;
+    const expectedRank = sorted[i][1];
+    const predTeamRank = result[team];
+    if (predTeamRank === expectedRank) h++;
   });
   return h;
 }
@@ -755,13 +749,13 @@ function calcMemberStats(name) {
     const m=data.members[name]; if(!m) return;
     let hits=0,near=0,teams=0,hitsH=0,nearH=0,teamsH=0;
     const check=(pred,result,isH)=>{
-      const occ=occupiedRanks(result);
+      const sorted=sortedByRank(result);
       pred.forEach((team,i)=>{
-        const ar=result[team]; if(!ar) return;
+        const ar=result[team]; if(ar===undefined) return;
         const predRank=i+1;
         const diff=Math.abs(predRank-ar);
-        const range=occ[team]||[];
-        const isExact=range.includes(predRank);
+        const expectedRank=i<sorted.length?sorted[i][1]:null;
+        const isExact=expectedRank!==null && ar===expectedRank;
         if(!isH){teams++;if(!teamCounts[team])teamCounts[team]=0;if(!teamHits[team])teamHits[team]=0;teamCounts[team]++;if(isExact){hits++;near++;teamHits[team]++;}else if(diff===1)near++;}
         else{teamsH++;if(isExact){hitsH++;nearH++;}else if(diff===1)nearH++;}
       });
@@ -880,20 +874,22 @@ function renderYearDetail() {
   const result=isH?(lg==='cl'?data.half_cl:data.half_pa):(lg==='cl'?data.result_cl:data.result_pa);
   const phLabel=isH?'【前半戦】':'【最終結果】';
   document.getElementById('yearDetailTitle').textContent=`${year}年 ${lg==='cl'?'セ':'パ'}・リーグ ${phLabel}`;
-  const occ=occupiedRanks(result); // team -> [占有する順位の配列]（同率対応の的中判定に使用）
   const members=Object.entries(data.members);
   if(!members.length){document.getElementById('yearTable').innerHTML='<div style="text-align:center;padding:20px;color:#999;">データなし</div>';return;}
   const thead=`<tr><th>順位</th><th>実際</th>${members.map(([n])=>`<th>${n}</th>`).join('')}</tr>`;
   // チームを順位順にソートし、同率でも1チーム=1行として個別表示（並記しない）
-  const sortedEntries=Object.entries(result).sort((a,b)=>a[1]-b[1]);
-  const tbody=sortedEntries.map(([at, rank])=>{
+  const sortedEntries=sortedByRank(result);
+  // 各行(インデックスi)には「そのメンバーのi番目(0-index)の予想」pred[i]を表示する。
+  // 同率で2チームが同じ順位でも、行ごとに異なる予想枠(1番目の予想／2番目の予想)を割り当てるので、
+  // 予想が重複表示されることはない。的中判定は「予想チームの実際の順位」が「この行の実際の順位」と一致すればhit
+  // （同率グループは同じ順位の値を持つため、どちらの枠を予想しても正解になる）
+  const tbody=sortedEntries.map(([at, rank], i)=>{
     const cells=members.map(([,m])=>{
       const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];
-      const pt=pred[rank-1]||'-'; // このチームの実際の順位に対応する予想枠
-      // 予想チームの占有順位にこの行のrankが含まれていればhit（同率なら1位予想でも2位予想でも正解扱い）
-      const range=occ[pt]||[];
-      const isHit=range.includes(rank);
-      const ar=result[pt]; const diff=ar!==undefined?Math.abs(rank-ar):99;
+      const pt=pred[i]||'-'; // このメンバーのi番目の予想（重複しない）
+      const ar=result[pt];
+      const isHit=ar!==undefined && ar===rank;
+      const diff=ar!==undefined?Math.abs((i+1)-ar):99;
       const cls=isHit?'hit':diff<=1?'near':'miss';
       return `<td><span class="${cls}">${pt}</span></td>`;
     }).join('');
@@ -988,7 +984,7 @@ function renderLiveStandingsTable(lg) {
   const result = lg==='cl' ? data.result_cl : data.result_pa;
   const medalMapLive = {1:'🥇',2:'🥈',3:'🥉',4:'４',5:'５',6:'６'};
   // 順位順にソートし、同率チームは個別行で表示（並記しない）
-  const sortedLive = Object.entries(result).sort((a,b)=>a[1]-b[1]);
+  const sortedLive = sortedByRank(result);
   const rows = sortedLive.map(([team, rank]) => {
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;${rank<=3?'background:rgba(59,125,216,0.06)':''}">
       <span style="font-size:18px;width:28px;text-align:center">${medalMapLive[rank]||rank}</span>
@@ -1030,21 +1026,21 @@ function renderStandings() {
   const lg=currentStLeague;
   const isH=currentStPhase==='half'&&data.hasHalf;
   const result=isH?(lg==='cl'?data.half_cl:data.half_pa):(lg==='cl'?data.result_cl:data.result_pa);
-  const occSt=occupiedRanks(result);
   const members=Object.entries(data.members);
   const medalMapSt = {1:'🥇',2:'🥈',3:'🥉',4:'４',5:'５',6:'６'};
   document.getElementById('standingsThead').innerHTML=`<tr><th>順位</th><th>チーム</th>${members.map(([n])=>`<th>${n}</th>`).join('')}</tr>`;
   // チームを順位順にソートし、同率でも1チーム=1行として個別表示（並記しない）
-  const sortedTeamsSt=Object.entries(result).sort((a,b)=>a[1]-b[1]);
-  document.getElementById('standingsTbody').innerHTML=sortedTeamsSt.map(([team,rank])=>{
+  const sortedTeamsSt=sortedByRank(result);
+  document.getElementById('standingsTbody').innerHTML=sortedTeamsSt.map(([team,rank],rowIdx)=>{
     const cells=members.map(([,m])=>{
       const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];
-      // このチームをメンバーが何位に予想したか探す
+      // このチームをメンバーが何番目(0-index)に予想したか探す
       const idx=pred.indexOf(team);
       const pr=idx>=0?idx+1:null;
-      const range=occSt[team]||[rank];
-      const isHit=pr!==null && range.includes(pr);
-      const diff=pr!==null?Math.abs(pr-rank):99;
+      // 予想した位置(idx)の「実際の順位の値」と、このチーム自身の実際の順位が一致すればhit
+      // （同率グループは同じ順位の値を持つため、1番目・2番目どちらの枠を予想しても正解になる）
+      const isHit=idx>=0 && sortedTeamsSt[idx] && sortedTeamsSt[idx][1]===rank;
+      const diff=pr!==null?Math.abs(pr-(rowIdx+1)):99;
       const cls=isHit?'🟢 ':diff<=1?'🟡 ':'🔴 ';
       return `<td style="font-size:11px;">${cls}${pr!==null?pr+'位予想':'?'}</td>`;
     }).join('');
