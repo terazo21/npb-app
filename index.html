@@ -275,6 +275,14 @@ select.team-sel { font-size:13px; padding:5px 8px; border-radius:6px; border:1px
           <button class="lg-btn pl" id="inputPL" onclick="switchInputLeague('pl')">パ・リーグ</button>
         </div>
         <div id="liveStandingsTable"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap;border-top:1px solid #dde4f5;padding-top:12px;">
+          <select id="confirmPhase" style="padding:6px 10px;border-radius:6px;border:1px solid #c0cfe8;font-size:12px;">
+            <option value="half">前半戦として確定</option>
+            <option value="final">最終結果として確定</option>
+          </select>
+          <button class="apply-btn" onclick="confirmCurrentStandings()">✅ この順位で確定・保存</button>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#888;">※ 確定すると現在の順位がDBに記録され、賞金集計に反映されます。前半戦・最終結果はそれぞれ何度でも上書き確定できます。</div>
       </div>
 
       <!-- 過去の比較 -->
@@ -538,7 +546,18 @@ async function loadFromDB() {
     (results || []).forEach(row => {
       if (!allData[row.year]) initYear(row.year);
       const rankMap = {};
-      [row.rank1,row.rank2,row.rank3,row.rank4,row.rank5,row.rank6].forEach((t,i) => { if (t) rankMap[t] = i+1; });
+      [row.rank1,row.rank2,row.rank3,row.rank4,row.rank5,row.rank6].forEach((t,i) => {
+        if (!t) return;
+        // "チーム名|順位" 形式（同率対応）と、旧形式（列の並び順=順位）の両方に対応
+        if (t.includes('|')) {
+          const idx = t.lastIndexOf('|');
+          const teamName = t.slice(0, idx);
+          const rankNum = parseInt(t.slice(idx+1));
+          rankMap[teamName] = rankNum;
+        } else {
+          rankMap[t] = i+1;
+        }
+      });
       if (row.phase === 'final') {
         if (row.league === 'cl') allData[row.year].result_cl = rankMap;
         else allData[row.year].result_pa = rankMap;
@@ -576,7 +595,8 @@ async function savePredictionToDB(year, memberName, predCL, predPA) {
 async function saveResultToDB(year, phase, rankMapCL, rankMapPA) {
   if (!sbClient) { console.warn('sbClient未初期化'); return; }
   const toRanks = (rankMap) => {
-    const arr = Object.entries(rankMap).sort((a,b)=>a[1]-b[1]).map(([t])=>t);
+    // "チーム名|順位" 形式で保存（同率対応）
+    const arr = Object.entries(rankMap).sort((a,b)=>a[1]-b[1]).map(([t,r])=>`${t}|${r}`);
     return { rank1:arr[0]||null, rank2:arr[1]||null, rank3:arr[2]||null, rank4:arr[3]||null, rank5:arr[4]||null, rank6:arr[5]||null };
   };
   if (Object.keys(rankMapCL).length > 0) {
@@ -963,6 +983,52 @@ function initInputSelects() {
       el.innerHTML = '⚠️ 今シーズン(' + year + '年)のデータ未取得 — GitHub Actionsが毎朝8時に自動更新します';
     }
   }
+}
+
+const ADMIN_PASSWORD = 'abekenpb';
+
+function checkAdminAuth() {
+  // このブラウザで既に認証済みならスキップ
+  if (localStorage.getItem('admin_auth') === 'ok') return true;
+  const input = prompt('確定操作にはパスワードが必要です。パスワードを入力してください：');
+  if (input === null) return false; // キャンセル
+  if (input !== ADMIN_PASSWORD) {
+    alert('パスワードが違います。');
+    return false;
+  }
+  localStorage.setItem('admin_auth', 'ok');
+  return true;
+}
+
+async function confirmCurrentStandings() {
+  if (!checkAdminAuth()) return;
+  const phase = document.getElementById('confirmPhase').value;
+  const year = new Date().getFullYear();
+  const data = allData[year];
+  const hasCL = data && Object.keys(data.result_cl||{}).length > 0;
+  const hasPA = data && Object.keys(data.result_pa||{}).length > 0;
+  if (!hasCL && !hasPA) {
+    alert('現在の順位データがありません。しばらく待ってから再度お試しください。');
+    return;
+  }
+  const phaseLabel = phase === 'half' ? '前半戦' : '最終結果';
+  const ok = confirm(`現在表示中の順位を ${year}年 ${phaseLabel} として確定・保存します。\n\nよろしいですか？`);
+  if (!ok) return;
+
+  showLoading('確定処理中...');
+  try {
+    await saveResultToDB(year, phase, data.result_cl||{}, data.result_pa||{});
+    if (phase === 'half') {
+      data.half_cl = { ...(data.result_cl||{}) };
+      data.half_pa = { ...(data.result_pa||{}) };
+      data.hasHalf = true;
+    }
+    // 最終結果として確定する場合、result_cl/result_paは既に現在値なのでそのままでOK
+  } finally {
+    hideLoading();
+  }
+  alert('✅ 確定しました！');
+  renderAll();
 }
 
 function switchInputLeague(lg) {
