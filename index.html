@@ -408,6 +408,34 @@ let teamChartInst = null;
 const AVATAR_COLORS = ['#e74c3c','#3498db','#27ae60','#9b59b6','#f39c12','#1abc9c','#e67e22','#2980b9','#8e44ad','#c0392b','#16a085','#d35400'];
 const CL_TEAMS = ['巨人','阪神','DeNA','広島','中日','ヤクルト'];
 
+// 同率対応: predの各予想が的中しているか判定するヘルパー
+// pred: 予想チーム配列(0-indexed), result: {チーム名:実際の順位}
+// 戻り値: 的中数
+// resultの各チームが「占有する順位」の一覧を返す（同率なら複数順位を占有）
+// 例: {阪神:1,巨人:1,ヤクルト:3} → {阪神:[1,2], 巨人:[1,2], ヤクルト:[3]}
+function occupiedRanks(result) {
+  const rg = {};
+  Object.entries(result).forEach(([t,r]) => { if(!rg[r]) rg[r]=[]; rg[r].push(t); });
+  const occ = {};
+  Object.entries(rg).forEach(([r, teams]) => {
+    const start = parseInt(r);
+    const range = teams.map((_, k) => start + k);
+    teams.forEach(t => occ[t] = range);
+  });
+  return occ;
+}
+// pred(予想配列, 0-indexed)のうち、同率を考慮して的中している数を返す
+function countHits(pred, result) {
+  const occ = occupiedRanks(result);
+  let h = 0;
+  pred.forEach((team, i) => {
+    const predRank = i + 1;
+    const range = occ[team] || [];
+    if (range.includes(predRank)) h++;
+  });
+  return h;
+}
+
 // 年別賞金ルール
 const PRIZE_RULES = {
   // year: { half_3, half_4, half_6, final_8, final_12 }
@@ -439,7 +467,7 @@ function calcPrize(name, year) {
   // 前半戦（セ・パ各リーグ独立）
   if (data.hasHalf) {
     const calcHalf = (pred, result, lg) => {
-      let hits = pred.filter((t,i) => result[t] === i+1).length;
+      let hits = countHits(pred, result);
       let prize = 0;
       if (hits >= 6 && rule.half_6) { prize = rule.half_6; detail.push(`前半${lg}途中ピタリ賞 +¥${rule.half_6.toLocaleString()}`); }
       else if (hits >= 4 && rule.half_4) { prize = rule.half_4; detail.push(`前半${lg}ニアピタ賞(${hits}チーム) +¥${rule.half_4.toLocaleString()}`); }
@@ -452,8 +480,8 @@ function calcPrize(name, year) {
 
   // 最終（セパ合計12チームで判定）
   let totalHits = 0;
-  (m.pred_cl||[]).forEach((t,i) => { if ((data.result_cl||{})[t]===i+1) totalHits++; });
-  (m.pred_pa||[]).forEach((t,i) => { if ((data.result_pa||{})[t]===i+1) totalHits++; });
+  totalHits += countHits(m.pred_cl||[], data.result_cl||{});
+  totalHits += countHits(m.pred_pa||[], data.result_pa||{});
   if (totalHits >= 12 && rule.final_12) {
     finalPrize = rule.final_12;
     detail.push(`ピタリ賞(12チーム全的中) +¥${rule.final_12.toLocaleString()}`);
@@ -727,15 +755,15 @@ function calcMemberStats(name) {
     const m=data.members[name]; if(!m) return;
     let hits=0,near=0,teams=0,hitsH=0,nearH=0,teamsH=0;
     const check=(pred,result,isH)=>{
-      const rankToTeamsLocal={};
-      Object.entries(result).forEach(([t,r])=>{if(!rankToTeamsLocal[r])rankToTeamsLocal[r]=[];rankToTeamsLocal[r].push(t);});
+      const occ=occupiedRanks(result);
       pred.forEach((team,i)=>{
         const ar=result[team]; if(!ar) return;
-        const diff=Math.abs((i+1)-ar);
-        const teamsAtRank=rankToTeamsLocal[i+1]||[];
-        const hitFlag=teamsAtRank.includes(team);
-        if(!isH){teams++;if(!teamCounts[team])teamCounts[team]=0;if(!teamHits[team])teamHits[team]=0;teamCounts[team]++;if(hitFlag){hits++;near++;teamHits[team]++;}else if(diff===1)near++;}
-        else{teamsH++;if(hitFlag){hitsH++;nearH++;}else if(diff===1)nearH++;}
+        const predRank=i+1;
+        const diff=Math.abs(predRank-ar);
+        const range=occ[team]||[];
+        const isExact=range.includes(predRank);
+        if(!isH){teams++;if(!teamCounts[team])teamCounts[team]=0;if(!teamHits[team])teamHits[team]=0;teamCounts[team]++;if(isExact){hits++;near++;teamHits[team]++;}else if(diff===1)near++;}
+        else{teamsH++;if(isExact){hitsH++;nearH++;}else if(diff===1)nearH++;}
       });
     };
     check(m.pred_cl||[],data.result_cl||{},false);
@@ -761,10 +789,7 @@ function calcAllRanking() {
 function calcYearHits(name,year) {
   const d=allData[year]; if(!d) return 0;
   const m=d.members[name]; if(!m) return 0;
-  let h=0;
-  (m.pred_cl||[]).forEach((t,i)=>{if(d.result_cl[t]===i+1)h++;});
-  (m.pred_pa||[]).forEach((t,i)=>{if(d.result_pa[t]===i+1)h++;});
-  return h;
+  return countHits(m.pred_cl||[], d.result_cl||{}) + countHits(m.pred_pa||[], d.result_pa||{});
 }
 
 // =============================================
@@ -855,65 +880,40 @@ function renderYearDetail() {
   const result=isH?(lg==='cl'?data.half_cl:data.half_pa):(lg==='cl'?data.result_cl:data.result_pa);
   const phLabel=isH?'【前半戦】':'【最終結果】';
   document.getElementById('yearDetailTitle').textContent=`${year}年 ${lg==='cl'?'セ':'パ'}・リーグ ${phLabel}`;
-
-  // 同率グループマップ: rank → [team, team, ...]
-  const rankToTeams={};
-  Object.entries(result).forEach(([t,r])=>{
-    if(!rankToTeams[r]) rankToTeams[r]=[];
-    rankToTeams[r].push(t);
-  });
-
+  // 同率グループマップ: rank(数値) -> [team,...]（DB上の実際の順位キーのみ存在）
+  const rankGroups={};
+  Object.entries(result).forEach(([t,r])=>{ if(!rankGroups[r]) rankGroups[r]=[]; rankGroups[r].push(t); });
+  const occ=occupiedRanks(result); // team -> [占有する順位の配列]
   const members=Object.entries(data.members);
   if(!members.length){document.getElementById('yearTable').innerHTML='<div style="text-align:center;padding:20px;color:#999;">データなし</div>';return;}
-
-  const medalMap={1:'🥇',2:'🥈',3:'🥉'};
   const thead=`<tr><th>順位</th><th>実際</th>${members.map(([n])=>`<th>${n}</th>`).join('')}</tr>`;
-
-  // 1〜6位を走査、各順位のチームを個別行で表示
-  const rows=[];
-  for(let rank=1;rank<=6;rank++){
-    const teams=rankToTeams[rank]||[];
-    if(teams.length===0) continue; // 同率で飛んでいる順位はスキップ
-    const isTied=teams.length>1;
-    const rankLabel=medalMap[rank]||rank+'位';
-    teams.forEach(at=>{
-      const cells=members.map(([,m])=>{
-        const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];
-        const pt=pred[rank-1]||'-'; // この順位の予想チーム
-        const ar=result[pt];
-        // 同率の場合: 予想チームが同率グループのいずれかならhit
-        // 同率でない場合: 予想チームが実際のチームと一致すればhit
-        const isHit=isTied ? teams.includes(pt) : pt===at;
-        const diff=ar!==undefined?Math.abs(rank-ar):99;
-        const cls=isHit?'hit':diff<=1?'near':'miss';
-        return `<td><span class="${cls}">${pt}</span></td>`;
-      }).join('');
-      rows.push(`<tr><td style="font-weight:700;color:#1a3a6b;text-align:center">${rankLabel}</td><td style="font-weight:700">${at}</td>${cells}</tr>`);
-    });
-  }
-
-  const hitRow=`<tr style="background:#f8faff"><td colspan="2" style="font-weight:700;text-align:right;">的中数▶</td>${
-    members.map(([,m])=>{
+  // 順位は1〜6を必ず1行ずつ表示。同率チームは実際の順位キーの行にまとめて表示、それ以外の行は「実際」欄が'-'になる。
+  const tbody=[1,2,3,4,5,6].map(rank=>{
+    const teamsAtRank=rankGroups[rank]||[];
+    const at=teamsAtRank.length ? teamsAtRank.join('・') : '-';
+    const cells=members.map(([,m])=>{
       const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];
-      let h=0;
-      pred.forEach((t,i)=>{
-        const teamsAt=rankToTeams[i+1]||[];
-        if(teamsAt.length>1){ if(teamsAt.includes(t)) h++; }
-        else { if(result[t]===i+1) h++; }
-      });
-      return `<td style="font-weight:700;color:#1a3a6b">${h}/6</td>`;
-    }).join('')
-  }</tr>`;
-
-  const prizeRow=`<tr style="background:#fff8e1"><td colspan="2" style="font-weight:700;text-align:right;">💰 獲得賞金▶</td>${
-    members.map(([name])=>{
-      const p=calcPrize(name,year);
-      const prize=isH?(lg==='cl'?p.half_cl:p.half_pa):p.final;
+      const pt=pred[rank-1]||'-';
+      // 予想チームの占有順位にこの行のrankが含まれていればhit（同率なら1位予想でも2位予想でも正解扱い）
+      const range=occ[pt]||[];
+      const isHit=range.includes(rank);
+      const ar=result[pt]; const diff=ar!==undefined?Math.abs(rank-ar):99;
+      const cls=isHit?'hit':diff<=1?'near':'miss';
+      return `<td><span class="${cls}">${pt}</span></td>`;
+    }).join('');
+    return `<tr><td style="font-weight:700;color:#1a3a6b">${rank}位</td><td style="font-weight:700">${at}</td>${cells}</tr>`;
+  }).join('');
+  const hitRow=`<tr style="background:#f8faff"><td colspan="2" style="font-weight:700;text-align:right;">的中数▶</td>${members.map(([,m])=>{const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];const h=countHits(pred,result);return`<td style="font-weight:700;color:#1a3a6b">${h}/6</td>`;}).join('')}</tr>`;
+  // 賞金行を追加
+  const prizeRow = `<tr style="background:#fff8e1"><td colspan="2" style="font-weight:700;text-align:right;">💰 獲得賞金▶</td>${
+    members.map(([name]) => {
+      const p = calcPrize(name, year);
+      const prize = isH ? (lg==='cl' ? p.half_cl : p.half_pa) : p.final;
       return `<td style="font-weight:700;color:${prize>0?'#c8920a':'#999'}">${prize>0?'¥'+prize.toLocaleString():'-'}</td>`;
     }).join('')
   }</tr>`;
 
-  document.getElementById('yearTable').innerHTML=`<table class="pred-table"><thead>${thead}</thead><tbody>${rows.join('')}${hitRow}${prizeRow}</tbody></table><div style="margin-top:6px;font-size:11px;color:#666;"><span class="hit" style="margin-right:6px;">ピタリ</span><span class="near" style="margin-right:6px;">±1以内</span><span class="miss">外れ</span></div>`;
+  document.getElementById('yearTable').innerHTML=`<table class="pred-table"><thead>${thead}</thead><tbody>${tbody}${hitRow}${prizeRow}</tbody></table><div style="margin-top:6px;font-size:11px;color:#666;"><span class="hit" style="margin-right:6px;">ピタリ</span><span class="near" style="margin-right:6px;">±1以内</span><span class="miss">外れ</span></div>`;
 }
 
 function renderMemberCards() {
@@ -986,22 +986,18 @@ function renderLiveStandingsTable(lg) {
   const el = document.getElementById('liveStandingsTable');
   if (!el) return;
   if (!data) {
-    el.innerHTML = '<div style="text-align:center;padding:16px;color:#999;font-size:12px;">今シーズンの順位データがありません</div>';
+    el.innerHTML = '<div style="text-align:center;padding:16px;color:#999;font-size:12px;">今シーズンの順位データがありません<br>GitHub Actionsが毎朝自動取得します</div>';
     return;
   }
   const result = lg==='cl' ? data.result_cl : data.result_pa;
-  // 同率対応：rank→[team]の配列マップを作る
-  const rankToTeams = {};
-  Object.entries(result).forEach(([t,r]) => {
-    if (!rankToTeams[r]) rankToTeams[r] = [];
-    rankToTeams[r].push(t);
-  });
-  const medalMap = {1:'🥇',2:'🥈',3:'🥉',4:'４',5:'５',6:'６'};
-  // チームを順位順にソート、同率は個別行
-  const sortedLive = Object.entries(result).sort((a,b)=>a[1]-b[1]);
-  const rows = sortedLive.map(([team, rank]) => {
+  const rankGroupsLive = {};
+  Object.entries(result).forEach(([t,r]) => { if(!rankGroupsLive[r]) rankGroupsLive[r]=[]; rankGroupsLive[r].push(t); });
+  const medals = ['🥇','🥈','🥉','４','５','６'];
+  const rows = [1,2,3,4,5,6].map((rank,i) => {
+    const teams = rankGroupsLive[rank] || [];
+    const team = teams.length ? teams.join('・') : '-';
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;${rank<=3?'background:rgba(59,125,216,0.06)':''}">
-      <span style="font-size:18px;width:28px;text-align:center">${medalMap[rank]||rank}</span>
+      <span style="font-size:18px;width:28px;text-align:center">${medals[i]}</span>
       <span style="font-weight:${rank<=3?'700':'500'};font-size:14px">${team}</span>
     </div>`;
   }).join('');
@@ -1040,26 +1036,25 @@ function renderStandings() {
   const lg=currentStLeague;
   const isH=currentStPhase==='half'&&data.hasHalf;
   const result=isH?(lg==='cl'?data.half_cl:data.half_pa):(lg==='cl'?data.result_cl:data.result_pa);
-  const rankToTeam={}; Object.entries(result).forEach(([t,r])=>rankToTeam[r]=t);
+  const rankGroupsSt={}; Object.entries(result).forEach(([t,r])=>{ if(!rankGroupsSt[r]) rankGroupsSt[r]=[]; rankGroupsSt[r].push(t); });
+  const occSt=occupiedRanks(result);
   const members=Object.entries(data.members);
   const medals=['🥇','🥈','🥉','４','５','６'];
-  // 同率対応：チームを順位順に個別行表示
-  const rankToTeamsS={};
-  Object.entries(result).forEach(([t,r])=>{if(!rankToTeamsS[r])rankToTeamsS[r]=[];rankToTeamsS[r].push(t);});
-  const sortedTeamsS=Object.entries(result).sort((a,b)=>a[1]-b[1]);
   document.getElementById('standingsThead').innerHTML=`<tr><th>順位</th><th>チーム</th>${members.map(([n])=>`<th>${n}</th>`).join('')}</tr>`;
-  document.getElementById('standingsTbody').innerHTML=sortedTeamsS.map(([team,rank])=>{
-    const teamsAtRank=rankToTeamsS[rank]||[team];
+  document.getElementById('standingsTbody').innerHTML=[1,2,3,4,5,6].map((rank,i)=>{
+    const teamsAtRank=rankGroupsSt[rank]||[];
+    const team=teamsAtRank.length ? teamsAtRank.join('・') : '-';
     const cells=members.map(([,m])=>{
       const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];
-      const predTeamAtRank=pred[rank-1];
-      const isHit=teamsAtRank.includes(predTeamAtRank);
-      const pr=pred.indexOf(team)+1||null;
+      const pt=pred[rank-1];
+      const range=pt?(occSt[pt]||[]):[];
+      const isHit=range.includes(rank);
+      const pr=pt?pred.indexOf(pt)+1:null;
       const diff=pr?Math.abs(pr-rank):99;
       const cls=isHit?'🟢 ':diff<=1?'🟡 ':'🔴 ';
-      return `<td style="font-size:11px;">${cls}${pr?pr+'位予想':'?'}</td>`;
+      return `<td style="font-size:11px;">${cls}${pt?pr+'位予想':'?'}</td>`;
     }).join('');
-    return `<tr class="${rank<=3?'cs':''}""><td style="text-align:center">${medals[rank-1]||rank}</td><td><strong>${team}</strong></td>${cells}</tr>`;
+    return `<tr class="${rank<=3?'cs':''}""><td style="text-align:center">${medals[i]}</td><td><strong>${team}</strong></td>${cells}</tr>`;
   }).join('');
 }
 
@@ -1090,7 +1085,7 @@ function switchTab(name) {
 // =============================================
 // ===== 起動時に順位を自動取得してSupabaseに保存 =====
 async function fetchAndSaveStandings() {
-  if (!WORKER_URL || WORKER_URL === 'YOUR_WORKER_URL') return;
+  if (!WORKER_URL || WORKER_URL === 'https://npb-proxy.tks-absp21.workers.dev/') return;
   try {
     console.log('最新順位を取得中...');
     const res = await fetch(WORKER_URL);
@@ -1110,9 +1105,11 @@ async function fetchAndSaveStandings() {
     if (data.cl && data.cl.length > 0) allData[year].result_cl = toRankMap(data.cl);
     if (data.pl && data.pl.length > 0) allData[year].result_pa = toRankMap(data.pl);
 
+    // 注: DBへの保存はしない（rank1〜6の列保存では同率情報が失われるため）
+    // allData はメモリ上でWorkerの正しい同率情報を保持したまま全タブ再描画する
+
     console.log('順位更新完了:', data.updated);
 
-    // 表示を更新（全タブ再描画）
     const el = document.getElementById('liveUpdatedAt');
     if (el) el.textContent = '✅ ' + data.updated + ' 時点（起動時自動取得）';
     renderAll();
