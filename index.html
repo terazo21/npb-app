@@ -896,9 +896,13 @@ function renderYearDetail() {
   const result=isH?(lg==='cl'?data.half_cl:data.half_pa):(lg==='cl'?data.result_cl:data.result_pa);
   // 現在シーズン中で、まだ最終結果として確定されていない場合は「シーズン中」と表示
   const currentYearNow = new Date().getFullYear();
-  const isOngoingUnconfirmedFinal = !isH && parseInt(year) === currentYearNow && !data.finalConfirmed;
+  const isThisYearUnconfirmed = parseInt(year) === currentYearNow && !data.finalConfirmed;
+  const isOngoingUnconfirmedFinal = !isH && isThisYearUnconfirmed;
   const phLabel = isH ? '【前半戦】' : (isOngoingUnconfirmedFinal ? '📊【シーズン中】' : '【最終結果】');
   document.getElementById('yearDetailTitle').textContent=`${year}年 ${lg==='cl'?'セ':'パ'}・リーグ ${phLabel}`;
+  // 「最終結果」切替ボタンのラベルも、シーズン中は「シーズン中」に変更
+  const ydFinalBtn=document.getElementById('ydFinal');
+  if(ydFinalBtn) ydFinalBtn.textContent = isThisYearUnconfirmed ? 'シーズン中' : '最終結果';
   const members=Object.entries(data.members);
   if(!members.length){document.getElementById('yearTable').innerHTML='<div style="text-align:center;padding:20px;color:#999;">データなし</div>';return;}
   const thead=`<tr><th>順位</th><th>実際</th>${members.map(([n])=>`<th>${n}</th>`).join('')}</tr>`;
