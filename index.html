@@ -1046,13 +1046,19 @@ function renderStandings() {
     const team=teamsAtRank.length ? teamsAtRank.join('・') : '-';
     const cells=members.map(([,m])=>{
       const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];
-      const pt=pred[rank-1];
-      const range=pt?(occSt[pt]||[]):[];
-      const isHit=range.includes(rank);
-      const pr=pt?pred.indexOf(pt)+1:null;
-      const diff=pr?Math.abs(pr-rank):99;
+      // この行の「実際のチーム（同率なら複数）」を、このメンバーが何位に予想したか探す
+      let pr=null, isHit=false;
+      for(const t of teamsAtRank){
+        const idx=pred.indexOf(t);
+        if(idx<0) continue;
+        const candidate=idx+1;
+        const range=occSt[t]||[rank];
+        if(range.includes(candidate)){ pr=candidate; isHit=true; break; }
+        if(pr===null) pr=candidate; // hitがなければ最初に見つかった予想位置を保持
+      }
+      const diff=pr!==null?Math.abs(pr-rank):99;
       const cls=isHit?'🟢 ':diff<=1?'🟡 ':'🔴 ';
-      return `<td style="font-size:11px;">${cls}${pt?pr+'位予想':'?'}</td>`;
+      return `<td style="font-size:11px;">${cls}${pr!==null?pr+'位予想':'?'}</td>`;
     }).join('');
     return `<tr class="${rank<=3?'cs':''}""><td style="text-align:center">${medals[i]}</td><td><strong>${team}</strong></td>${cells}</tr>`;
   }).join('');
