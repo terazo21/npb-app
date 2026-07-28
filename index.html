@@ -855,59 +855,65 @@ function renderYearDetail() {
   const result=isH?(lg==='cl'?data.half_cl:data.half_pa):(lg==='cl'?data.result_cl:data.result_pa);
   const phLabel=isH?'【前半戦】':'【最終結果】';
   document.getElementById('yearDetailTitle').textContent=`${year}年 ${lg==='cl'?'セ':'パ'}・リーグ ${phLabel}`;
-  // チームを順位順にソート、同率は個別行
-  const sortedEntries=Object.entries(result).sort((a,b)=>a[1]-b[1]);
-  // 同率グループマップ
-  const rankToTeamsY={}; Object.entries(result).forEach(([t,r])=>{if(!rankToTeamsY[r])rankToTeamsY[r]=[];rankToTeamsY[r].push(t);});
+
+  // 同率グループマップ: rank → [team, team, ...]
+  const rankToTeams={};
+  Object.entries(result).forEach(([t,r])=>{
+    if(!rankToTeams[r]) rankToTeams[r]=[];
+    rankToTeams[r].push(t);
+  });
+
   const members=Object.entries(data.members);
   if(!members.length){document.getElementById('yearTable').innerHTML='<div style="text-align:center;padding:20px;color:#999;">データなし</div>';return;}
+
+  const medalMap={1:'🥇',2:'🥈',3:'🥉'};
   const thead=`<tr><th>順位</th><th>実際</th>${members.map(([n])=>`<th>${n}</th>`).join('')}</tr>`;
-  // 各チームを1行ずつ表示（同率は同じ順位番号で個別行）
-  // 1〜6位を必ず表示（同率で存在しない順位は「(同率)」として表示）
-  const tbody=[1,2,3,4,5,6].map(rank=>{
-    const teamsAtRank=rankToTeamsY[rank]||[];
-    const isTied=teamsAtRank.length>1;
-    // この順位のチームが存在しない場合（同率で飛んでいる）
-    if(teamsAtRank.length===0){
-      // 直前の同率グループを探す
-      const prevRank=Object.keys(rankToTeamsY).map(Number).filter(r=>r<rank).sort((a,b)=>b-a)[0];
-      const prevTeams=prevRank?rankToTeamsY[prevRank]:[];
-      if(prevTeams.length>1){
-        // 同率で飛んでいる順位 → 行を表示せずスキップ
-        return null;
-      }
-      return null;
-    }
-    // 同率チームは複数行に分けて表示
-    return teamsAtRank.map(at=>{
+
+  // 1〜6位を走査、各順位のチームを個別行で表示
+  const rows=[];
+  for(let rank=1;rank<=6;rank++){
+    const teams=rankToTeams[rank]||[];
+    if(teams.length===0) continue; // 同率で飛んでいる順位はスキップ
+    const isTied=teams.length>1;
+    const rankLabel=medalMap[rank]||rank+'位';
+    teams.forEach(at=>{
       const cells=members.map(([,m])=>{
         const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];
-        const pt=pred[rank-1]||'-';
+        const pt=pred[rank-1]||'-'; // この順位の予想チーム
         const ar=result[pt];
-        const isHit=isTied ? teamsAtRank.includes(pt) : pt===at;
+        // 同率の場合: 予想チームが同率グループのいずれかならhit
+        // 同率でない場合: 予想チームが実際のチームと一致すればhit
+        const isHit=isTied ? teams.includes(pt) : pt===at;
         const diff=ar!==undefined?Math.abs(rank-ar):99;
         const cls=isHit?'hit':diff<=1?'near':'miss';
         return `<td><span class="${cls}">${pt}</span></td>`;
       }).join('');
-      return `<tr><td style="font-weight:700;color:#1a3a6b">${rank}位</td><td style="font-weight:700">${at}</td>${cells}</tr>`;
-    }).join('');
-  }).filter(r=>r!==null).join('');
-  const hitRow=`<tr style="background:#f8faff"><td colspan="2" style="font-weight:700;text-align:right;">的中数▶</td>${members.map(([,m])=>{const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];let h=0;pred.forEach((t,i)=>{const teamsAt=rankToTeamsY[i+1]||[];if(teamsAt.length>1){if(teamsAt.includes(t))h++;}else{if(result[t]===i+1)h++;}});return`<td style="font-weight:700;color:#1a3a6b">${h}/6</td>`;}).join('')}</tr>`;
-  // 賞金行を追加
-  const prizeRow = `<tr style="background:#fff8e1"><td colspan="2" style="font-weight:700;text-align:right;">💰 獲得賞金▶</td>${
-    members.map(([name]) => {
-      const p = calcPrize(name, year);
-      const prize = isH ? (lg==='cl' ? p.half_cl : p.half_pa) : p.final;
+      rows.push(`<tr><td style="font-weight:700;color:#1a3a6b;text-align:center">${rankLabel}</td><td style="font-weight:700">${at}</td>${cells}</tr>`);
+    });
+  }
+
+  const hitRow=`<tr style="background:#f8faff"><td colspan="2" style="font-weight:700;text-align:right;">的中数▶</td>${
+    members.map(([,m])=>{
+      const pred=(lg==='cl'?m.pred_cl:m.pred_pa)||[];
+      let h=0;
+      pred.forEach((t,i)=>{
+        const teamsAt=rankToTeams[i+1]||[];
+        if(teamsAt.length>1){ if(teamsAt.includes(t)) h++; }
+        else { if(result[t]===i+1) h++; }
+      });
+      return `<td style="font-weight:700;color:#1a3a6b">${h}/6</td>`;
+    }).join('')
+  }</tr>`;
+
+  const prizeRow=`<tr style="background:#fff8e1"><td colspan="2" style="font-weight:700;text-align:right;">💰 獲得賞金▶</td>${
+    members.map(([name])=>{
+      const p=calcPrize(name,year);
+      const prize=isH?(lg==='cl'?p.half_cl:p.half_pa):p.final;
       return `<td style="font-weight:700;color:${prize>0?'#c8920a':'#999'}">${prize>0?'¥'+prize.toLocaleString():'-'}</td>`;
     }).join('')
   }</tr>`;
 
-  // 結果データがない場合は「データなし」表示
-  if(sortedEntries.length===0){
-    document.getElementById('yearTable').innerHTML='<div style="text-align:center;padding:20px;color:#999;">結果データなし（Excelをアップロードしてください）</div>';
-    return;
-  }
-  document.getElementById('yearTable').innerHTML=`<table class="pred-table"><thead>${thead}</thead><tbody>${tbody}${hitRow}${prizeRow}</tbody></table><div style="margin-top:6px;font-size:11px;color:#666;"><span class="hit" style="margin-right:6px;">ピタリ</span><span class="near" style="margin-right:6px;">±1以内</span><span class="miss">外れ</span></div>`;
+  document.getElementById('yearTable').innerHTML=`<table class="pred-table"><thead>${thead}</thead><tbody>${rows.join('')}${hitRow}${prizeRow}</tbody></table><div style="margin-top:6px;font-size:11px;color:#666;"><span class="hit" style="margin-right:6px;">ピタリ</span><span class="near" style="margin-right:6px;">±1以内</span><span class="miss">外れ</span></div>`;
 }
 
 function renderMemberCards() {
@@ -1103,12 +1109,6 @@ async function fetchAndSaveStandings() {
     };
     if (data.cl && data.cl.length > 0) allData[year].result_cl = toRankMap(data.cl);
     if (data.pl && data.pl.length > 0) allData[year].result_pa = toRankMap(data.pl);
-
-    // Supabaseにも保存
-    await saveResultToDB(year, 'final',
-      allData[year].result_cl,
-      allData[year].result_pa
-    );
 
     console.log('順位更新完了:', data.updated);
 
